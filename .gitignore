@@ -11,3 +11,5 @@ htmlcov
 *.jpg
 *.png
 *.tex
+
+.ipynb_checkpoints
