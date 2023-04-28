@@ -4,7 +4,7 @@ from a3_gym_env.envs.pendulum import CustomPendulumEnv
 
 from torch import optim
 
-from Modules import PolicyNetwork
+from Modules import PolicyNetwork, ExperienceReplayBuffer
 
 # [DONE] Task 1: Start by implementing an environment interaction loop. You may refer to homework 1 for inspiration.
 # [ ] Task 2: Create and test an experience replay buffer with a random policy, which is the Gaussian distribution with arbitrary (randomly initialized) weights of the policy feed-forward network,receiving state, s, and returning the mean, mu(s) and the log_std, log_stg(s) (natural logarithm of the standard deviation) of actions.  As mentioned above, you can use a state-independent standard variance.
@@ -32,12 +32,12 @@ def interaction_loop():
     n_layers = 2
 
     # optimizer = optim.Adam(vae.parameters(), lr=learning_rate)
-    obs = env.reset()
+
     max_step = 1000
+    obs = env.reset()
     for _ in range(max_step):
         # get a random action in this environment
         action = env.action_space.sample()
-
         obs, reward, done, info = env.step(action)
         # render already plots the graph for you, no need to use plt
         img = env.render()
@@ -45,6 +45,41 @@ def interaction_loop():
             obs = env.reset()
     env.close()
 
+def test_experience_relay_buffer():
+    env = gym.make("Pendulum-v1-custom")
+    # sample hyperparameters
+    batch_size = 10000
+    epochs = 30
+    learning_rate = 1e-2
+    hidden_size = 8
+    n_layers = 2
+
+    # optimizer = optim.Adam(vae.parameters(), lr=learning_rate)
+    state = env.reset()
+    state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+
+    max_step = 1000
+    policy = PolicyNetwork(3, 2).to(device)
+    memory = ExperienceReplayBuffer(batch_size)
+
+    for _ in range(max_step):
+        # get a random action in this environment
+        action = env.action_space.sample()
+
+        obs, reward, done, info = env.step(action)
+        next_state = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+        memory.push(state, action, next_state, reward)
+
+        gaus_param = policy(state)
+        
+        print(gaus_param)
+        state = next_state
+        # render already plots the graph for you, no need to use plt
+        img = env.render()
+        if done:
+            obs = env.reset()
+    env.close()
 
 if __name__ == "__main__":
-    interaction_loop()
+    # interaction_loop()
+    test_experience_relay_buffer()
