@@ -3,8 +3,21 @@ import torch
 
 from torch import optim
 
+# [DONE] Task 1: Start by implementing an environment interaction loop. You may refer to homework 1 for inspiration.
+# [ ] Task 2: Create and test an experience replay buffer with a random policy, which is the Gaussian distribution with arbitrary (randomly initialized) weights of the policy feed-forward network,receiving state, s, and returning the mean, mu(s) and the log_std, log_stg(s) (natural logarithm of the standard deviation) of actions.  As mentioned above, you can use a state-independent standard variance.
+# [ ] Task 3: Make an episode reward processing function to turn one-step rewards into discounted rewards-to-go: R(s_1) = sum_{t=1} gamma^{t-1} r_t, which is the discounted reward, starting from the state, s_1.
+# [ ] Task 4: Start the model by implementing a vanilla policy gradient agent, where the gradient ascent stepsare done with the average of the gradient of log-likelihood over a trajectory weight by rewards-to-go   from each state. Try different step sizes in the gradient ascent.
+# [ ] Task 5: Pendulum is a continuous action space environment. Check out the example in `Modules.py` for torch implementation of the Gaussian module.  (if you work in Julia, speak with me regarding the pendulum dynamics in Julia, and Flux for DNNs.)
+# [ ] Task 6: Add a feed-forward network for the critic, accepting the state, s=[sin(angle), cos(angle), angular velocity], and returning a scalar for the value of the state, s.
+# [ ] Task 7: Implement the generalized advantage, see Eq11-12 in the PPO paper, to be used instead of rewards-to-go.
+# [ ] Task 8: Implement the surrogate objective for the policy gradient, see Eq7, without and without clipping.
+# [ ] Task 9: Implement the total loss, see Eq9 in the PPO.
+# [ ] Task 10: Combine all together to Algorithm 1 in the PPO paper. (In your basic implementation, you can collect data with a single actor, N=1)
+# [ ] Task 11: You should see progress with default hyperparameters, but you can try tuning those to see how it will improve your results.
+
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("mps")
+
 
 def interaction_loop():
     env = gym.make("Pendulum-v1-custom")
@@ -29,5 +42,6 @@ def interaction_loop():
             obs = env.reset()
     env.close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     interaction_loop()
