@@ -1,7 +1,10 @@
 import gym
 import torch
+from a3_gym_env.envs.pendulum import CustomPendulumEnv
 
 from torch import optim
+
+from Modules import PolicyNetwork
 
 # [DONE] Task 1: Start by implementing an environment interaction loop. You may refer to homework 1 for inspiration.
 # [ ] Task 2: Create and test an experience replay buffer with a random policy, which is the Gaussian distribution with arbitrary (randomly initialized) weights of the policy feed-forward network,receiving state, s, and returning the mean, mu(s) and the log_std, log_stg(s) (natural logarithm of the standard deviation) of actions.  As mentioned above, you can use a state-independent standard variance.
