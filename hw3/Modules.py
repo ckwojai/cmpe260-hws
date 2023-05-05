@@ -50,7 +50,24 @@ class PolicyNetwork(nn.Module):
         self.fc3 = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
+        if isinstance(x, np.ndarray):
+            x = torch.tensor(x, dtype=torch.float)
         x = nn.functional.relu(self.fc1(x))
         x = nn.functional.relu(self.fc2(x))
-        x = nn.functional.softmax(self.fc3(x), dim=-1)
+        x = self.fc3(x)
+        return x
+
+class ValueNetwork(nn.Module):
+    def __init__(self, input_size, output_size, hidden_size=64):
+        super(ValueNetwork, self).__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        if isinstance(x, np.ndarray):
+            x = torch.tensor(x, dtype=torch.float)
+        x = nn.functional.relu(self.fc1(x))
+        x = nn.functional.relu(self.fc2(x))
+        x = self.fc3(x)
         return x
