@@ -132,6 +132,12 @@ def compute_rtgs(batch_rews, gamma=0.95):
   batch_rtgs = torch.tensor(batch_rtgs, dtype=torch.float, requires_grad=True)
   return batch_rtgs
 
+def evaluate(critic, batch_obs):
+    return critic(batch_obs).squeeze()
+
+
+
+
 def rollout(env, policy, batch_size):
     # Batch data
     batch_obs = []             # batch observations
@@ -212,7 +218,7 @@ def test_vanilla_gradient_ascent():
         loss = -(batch_rtgs * batch_log_probs).mean()
         optimizer.zero_grad()
         loss.backward()
-        optimizer.step
+        optimizer.step()
         print(f"{i}: {loss}")
 
 def test_critic():
@@ -230,18 +236,192 @@ def test_critic():
     input_size = env.observation_space.shape[0]
     output_size = env.action_space.shape[0]
     policy = PolicyNetwork(input_size, output_size).to(device)
-    critic = ValueNetwork(input_size, 1)
-    optimizer =  Adam(policy.parameters(), lr=learning_rate)
+    critic = ValueNetwork(input_size, 1).to(device)
+    actor_optimizer =  Adam(policy.parameters(), lr=learning_rate)
+    critic_optimizer =  Adam(critic.parameters(), lr=learning_rate)
 
     for i in range(epoch):
         batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens = rollout(env, policy, batch_size)
         # average of log-likelihood, weighted by rewards-to-go
+        actor_loss = -(batch_rtgs * batch_log_probs).mean()
+        V = critic(batch_obs.to(device)).squeeze().to(device)
+        critic_loss = torch.nn.MSELoss()(V, batch_rtgs.to(device))
 
-        loss = -(batch_rtgs * batch_log_probs).mean()
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step
-        print(f"{i}: {loss}")
+
+        actor_optimizer.zero_grad()
+        actor_loss.backward(retain_graph=True)
+        actor_optimizer.step()
+        
+        critic_optimizer.zero_grad()
+        critic_loss.backward()
+        critic_optimizer.step()
+        print(f"{i}: {critic_loss}")
+
+def test_general_advantage():
+    """
+    * Implement the generalized advantage, see Eq11-12 in the PPO paper, to be used instead of rewards-to-go.
+    """
+    env = gym.make("Pendulum-v1-custom")
+
+    max_iteration = 100
+    epoch = 10
+    learning_rate = 0.95
+
+    batch_size = 1000
+    # Policy Network
+    input_size = env.observation_space.shape[0]
+    output_size = env.action_space.shape[0]
+    policy = PolicyNetwork(input_size, output_size).to(device)
+    critic = ValueNetwork(input_size, 1).to(device)
+    actor_optimizer =  Adam(policy.parameters(), lr=learning_rate)
+    critic_optimizer =  Adam(critic.parameters(), lr=learning_rate)
+
+    i = 0
+    while i < max_iteration:
+        batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens = rollout(env, policy, batch_size)
+        # average of log-likelihood, weighted by rewards-to-go
+        V = evaluate(critic, batch_obs.to(device)).to(device)
+        # General Advantage at iteration k 
+        Ak = batch_rtgs.to(device) - V.detach()
+        print(f"i={i}, Advantage: {Ak}")
+        # BELOW is the optimization loop where we update our network for ei epoch
+        # for ei in range(epoch):
+        #     actor_loss = -(batch_rtgs * batch_log_probs).mean()
+        #     V = evaluate(batch_obs.to(device)).to(device)
+
+        #     critic_loss = torch.nn.MSELoss()(V, batch_rtgs.to(device))
+        #     actor_optimizer.zero_grad()
+        #     actor_loss.backward(retain_graph=True)
+        #     actor_optimizer.step()
+            
+        #     critic_optimizer.zero_grad()
+        #     critic_loss.backward()
+        #     critic_optimizer.step()
+        # print(f"{i}: {critic_loss}")
+        i += 1
+
+def test_surrogate_and_total_loss():
+    """
+    * Implement the surrogate objective for the policy gradient, see Eq7, with and without clipping. 
+    * Implement the total loss, see Eq9 in the PPO.    
+    """
+    env = gym.make("Pendulum-v1-custom")
+
+    max_iteration = 100
+    epoch = 10
+    learning_rate = 0.95
+
+
+    batch_size = 1000
+    # Policy Network
+    input_size = env.observation_space.shape[0]
+    output_size = env.action_space.shape[0]
+    policy = PolicyNetwork(input_size, output_size).to(device)
+    critic = ValueNetwork(input_size, 1).to(device)
+    actor_optimizer =  Adam(policy.parameters(), lr=learning_rate)
+    critic_optimizer =  Adam(critic.parameters(), lr=learning_rate)
+
+    cov_var = torch.full(size=(output_size,), fill_value=0.5)
+    cov_mat = torch.diag(cov_var)
+    clip = 0.2
+    i = 0
+    while i < max_iteration:
+        batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens = rollout(env, policy, batch_size)
+        # average of log-likelihood, weighted by rewards-to-go
+        Vk = evaluate(critic, batch_obs.to(device)).to(device)
+        # General Advantage at iteration k 
+        Ak = batch_rtgs.to(device) - Vk.detach()
+        # BELOW is the optimization loop where we update our network for ei epoch
+        for ei in range(epoch):
+            actor_loss = -(batch_rtgs * batch_log_probs).mean()
+            V = evaluate(critic, batch_obs.to(device)).to(device)
+            # Calculate the log probability in this epoch using the updated actor
+            mean = policy(batch_obs.to(device))
+            dist = MultivariateNormal(mean.cpu(), cov_mat.cpu())
+            epoch_log_probs = dist.log_prob(batch_acts)
+
+            pi_ratios = torch.exp(epoch_log_probs - batch_log_probs).to(device)
+
+            # Surrogate Loss
+            surr = (pi_ratios * Ak).mean()
+            surr_clip = (torch.clamp(pi_ratios, 1 - clip, 1 + clip) * Ak).mean()
+            # Total Loss
+            total_loss = torch.min(surr, surr_clip)
+            print(f"no_clip: {surr}; clip: {surr_clip}; total_loss: {total_loss}" )
+
+
+            actor_optimizer.zero_grad()
+            actor_loss.backward(retain_graph=True)
+            actor_optimizer.step()
+            
+        #     critic_loss = torch.nn.MSELoss()(V, batch_rtgs.to(device))
+        #     critic_optimizer.zero_grad()
+        #     critic_loss.backward()
+        #     critic_optimizer.step()
+        # print(f"{i}: {critic_loss}")
+        i += 1
+    
+def ppo():
+    """
+    * Combine all together to Algorithm 1 in the PPO paper. (In your basic implementation, you can collect data with a single actor, N=1)
+    """
+    env = gym.make("Pendulum-v1-custom")
+
+    max_iteration = 100
+    epoch = 5 
+    learning_rate = 0.95
+
+
+    batch_size = 200
+    # Policy Network
+    input_size = env.observation_space.shape[0]
+    output_size = env.action_space.shape[0]
+    policy = PolicyNetwork(input_size, output_size).to(device)
+    critic = ValueNetwork(input_size, 1).to(device)
+    actor_optimizer =  Adam(policy.parameters(), lr=learning_rate)
+    critic_optimizer =  Adam(critic.parameters(), lr=learning_rate)
+
+    cov_var = torch.full(size=(output_size,), fill_value=0.5)
+    cov_mat = torch.diag(cov_var)
+    clip = 0.2
+    i = 0
+    while i < max_iteration:
+        batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens = rollout(env, policy, batch_size)
+        # average of log-likelihood, weighted by rewards-to-go
+        Vk = evaluate(critic, batch_obs.to(device)).to(device)
+        # General Advantage at iteration k 
+        Ak = batch_rtgs.to(device) - Vk.detach()
+        # BELOW is the optimization loop where we update our network for ei epoch
+        for ei in range(epoch):
+            V = evaluate(critic, batch_obs.to(device)).to(device)
+            # Calculate the log probability in this epoch using the updated actor
+            mean = policy(batch_obs.to(device))
+            dist = MultivariateNormal(mean.cpu(), cov_mat.cpu())
+            epoch_log_probs = dist.log_prob(batch_acts)
+
+            pi_ratios = torch.exp(epoch_log_probs - batch_log_probs).to(device)
+
+            # Surrogate Loss
+            surr = (pi_ratios * Ak).mean()
+            surr_clip = (torch.clamp(pi_ratios, 1 - clip, 1 + clip) * Ak).mean()
+
+            actor_loss = -torch.min(surr, surr_clip)
+            critic_loss = torch.nn.MSELoss()(V, batch_rtgs.to(device))
+
+            print(f"actor_loss: {actor_loss}, citic_loss: {critic_loss}")
+
+
+            actor_optimizer.zero_grad()
+            actor_loss.backward(retain_graph=True)
+            actor_optimizer.step()
+            
+            critic_optimizer.zero_grad()
+            critic_loss.backward()
+            critic_optimizer.step()
+        # print(f"{i}: {critic_loss}")
+        i += 1
+    torch.save(policy.state_dict(), './ppo_actor.pth')
+    torch.save(critic.state_dict(), './ppo_critic.pth')
 
 if __name__ == "__main__":
     # interaction_loop() # Task 1
@@ -249,4 +429,7 @@ if __name__ == "__main__":
     # test_reward_to_go() # Task 3
     # test_vanilla_gradient_ascent() # Task 4
     # Checked Out Module # Task 5
-    test_critic()# Task 6
+    # test_critic() # Task 6
+    # test_general_advantage() # Task 7
+    # test_surrogate_and_total_loss() # Task 8 & 9
+    ppo() # Task 10
